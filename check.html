@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <title>ChatGPT Session Checker 2026 (Updated)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+
+        textarea {
+            width: 100%;
+            height: 320px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        button {
+            padding: 14px 24px;
+            font-size: 17px;
+            background: #10a37f;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #0e8c6b;
+        }
+
+        button.secondary {
+            margin-left: 10px;
+            background: #374151;
+        }
+
+        button.secondary:hover {
+            background: #1f2937;
+        }
+
+        .result {
+            margin-top: 25px;
+            padding: 18px;
+            border-radius: 8px;
+            background: white;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            line-height: 1.5;
+        }
+
+        .error {
+            border-left: 6px solid #ef4444;
+        }
+
+        .success {
+            border-left: 6px solid #10a37f;
+        }
+
+        .warning {
+            border-left: 6px solid #f59e0b;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            font-size: 12px;
+            overflow: auto;
+            max-height: 400px;
+        }
+
+        #consoleSnippet {
+            height: 260px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>ChatGPT Session Checker (2026 версия)</h1>
+    <p>Вставь сюда <strong>весь JSON</strong> из твоего файла:</p>
+    <textarea id="jsonInput" placeholder='{"accessToken": "eyJhbGciOiJSUzI1NiIs...", ...}'></textarea>
+    <br><br>
+    <button onclick="buildConsoleSnippet()">Сгенерировать snippet для endpoint</button>
+    <button class="secondary" onclick="checkSession()">Пробовать прямой fetch</button>
+
+    <div id="result" class="result" style="display: none;"></div>
+    <div id="snippetPanel" class="result warning" style="display: none;">
+        <h2>Same-origin snippet</h2>
+        <p>Открой <strong>https://chatgpt.com</strong>, DevTools Console, вставь этот код и нажми Enter. Он дергает только endpoint и выводит ответ endpoint.</p>
+        <textarea id="consoleSnippet" readonly></textarea>
+        <br><br>
+        <button class="secondary" onclick="copyConsoleSnippet()">Скопировать snippet</button>
+    </div>
+
+    <script>
+        const CHECK_ENDPOINT = "https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27";
+        const SAME_ORIGIN_ENDPOINT = "/backend-api/accounts/check/v4-2023-04-27";
+
+        function escapeHtml(value) {
+            return String(value)
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#039;");
+        }
+
+        function getByPath(object, path) {
+            return path.split(".").reduce((value, key) => {
+                if (value == null) return undefined;
+
+                if (key.endsWith("[]")) {
+                    const arrayKey = key.slice(0, -2);
+                    return Array.isArray(value[arrayKey]) ? value[arrayKey] : undefined;
+                }
+
+                return value[key];
+            }, object);
+        }
+
+        function firstString(...values) {
+            for (const value of values.flat(Infinity)) {
+                if (typeof value === "string" && value.trim()) return value.trim();
+            }
+
+            return "";
+        }
+
+        function valuesFromArrayPath(object, arrayPath, valuePath) {
+            const array = getByPath(object, arrayPath);
+            if (!Array.isArray(array)) return [];
+            return array.map((item) => getByPath(item, valuePath)).filter(Boolean);
+        }
+
+        function normalizePlan(plan) {
+            return String(plan || "free").trim().toLowerCase();
+        }
+
+        function isPaidPlanValue(plan) {
+            const normalized = normalizePlan(plan);
+            return Boolean(normalized && !["free", "none", "unknown", "no_subscription"].includes(normalized));
+        }
+
+        function isExplicitFreePlan(plan) {
+            return ["free", "none", "no_subscription"].includes(normalizePlan(plan));
+        }
+
+        function addPlanSignal(signals, source, value, verified) {
+            if (typeof value !== "string" || !value.trim()) return;
+            signals.push({
+                source,
+                plan: normalizePlan(value),
+                verified
+            });
+        }
+
+        function collectPlanSignals(serverData) {
+            const signals = [];
+
+            addPlanSignal(signals, "server.account.planType", serverData?.account?.planType, true);
+            addPlanSignal(signals, "server.account.plan_type", serverData?.account?.plan_type, true);
+            addPlanSignal(signals, "server.planType", serverData?.planType, true);
+            addPlanSignal(signals, "server.plan_type", serverData?.plan_type, true);
+            addPlanSignal(signals, "server.plan.type", serverData?.plan?.type, true);
+            addPlanSignal(signals, "server.subscription.plan", serverData?.subscription?.plan, true);
+            addPlanSignal(signals, "server.subscription.plan_type", serverData?.subscription?.plan_type, true);
+            addPlanSignal(signals, "server.billing.subscription.plan", serverData?.billing?.subscription?.plan, true);
+
+            const accounts = Array.isArray(serverData?.accounts) ? serverData.accounts : [];
+            accounts.forEach((account, index) => {
+                addPlanSignal(signals, `server.accounts[${index}].planType`, account?.planType, true);
+                addPlanSignal(signals, `server.accounts[${index}].plan_type`, account?.plan_type, true);
+                addPlanSignal(signals, `server.accounts[${index}].account.planType`, account?.account?.planType, true);
+            });
+
+            return signals;
+        }
+
+        function buildPlanReport(serverData) {
+            const signals = collectPlanSignals(serverData);
+            const verifiedSignal = signals.find((signal) => signal.verified);
+            const primarySignal = verifiedSignal || signals[0] || {
+                source: "нет данных",
+                plan: "unknown",
+                verified: false
+            };
+            const uniquePlans = [...new Set(signals.map((signal) => signal.plan))];
+
+            return {
+                plan: primarySignal.plan,
+                source: primarySignal.source,
+                verified: primarySignal.verified,
+                signals,
+                hasConflict: uniquePlans.length > 1
+            };
+        }
+
+        function firstBoolean(...values) {
+            for (const value of values.flat(Infinity)) {
+                if (typeof value === "boolean") return value;
+            }
+
+            return false;
+        }
+
+        function extractBillingFlags(serverData) {
+            const accounts = Array.isArray(serverData?.accounts) ? serverData.accounts : [];
+            const delinquentValues = [
+                serverData?.account?.isDelinquent,
+                valuesFromArrayPath(serverData, "accounts", "isDelinquent"),
+                valuesFromArrayPath(serverData, "accounts", "account.isDelinquent")
+            ];
+            const gracePeriodId = firstString(
+                serverData?.account?.gracePeriodId,
+                valuesFromArrayPath(serverData, "accounts", "gracePeriodId"),
+                valuesFromArrayPath(serverData, "accounts", "account.gracePeriodId")
+            );
+
+            return {
+                isDelinquent: firstBoolean(delinquentValues),
+                gracePeriodId,
+                serverAccountCount: accounts.length
+            };
+        }
+
+        function buildVerdict(planReport, billingFlags) {
+            if (planReport.hasConflict) {
+                return {
+                    className: "warning",
+                    html: `<p style="color:#b45309"><strong>Конфликт данных endpoint:</strong> разные server-поля показывают разные планы.</p>`
+                };
+            }
+
+            if (billingFlags.isDelinquent) {
+                const grace = billingFlags.gracePeriodId ? ` Grace period: ${escapeHtml(billingFlags.gracePeriodId)}.` : "";
+                return {
+                    className: "warning",
+                    html: `<p style="color:#b45309"><strong>Не считать активной без проверки:</strong> аккаунт помечен как delinquent.${grace}</p>`
+                };
+            }
+
+            if (isPaidPlanValue(planReport.plan)) {
+                return {
+                    className: "success",
+                    html: `<p style="color:green">Платная подписка подтверждена серверным ответом</p>`
+                };
+            }
+
+            if (!isExplicitFreePlan(planReport.plan)) {
+                return {
+                    className: "warning",
+                    html: `<p style="color:#b45309"><strong>Неизвестный план:</strong> endpoint ответил JSON, но известных полей плана в ответе нет.</p>`
+                };
+            }
+
+            return {
+                className: "success",
+                html: `<p style="color:orange">Бесплатный план (Free), подтверждено серверным ответом</p>`
+            };
+        }
+
+        function extractAccountId(serverData) {
+            return firstString(
+                serverData?.account?.id,
+                valuesFromArrayPath(serverData, "accounts", "id")
+            ) || "не найден";
+        }
+
+        function renderEndpointResult(serverData) {
+            const planReport = buildPlanReport(serverData);
+            const billingFlags = extractBillingFlags(serverData);
+            const verdict = buildVerdict(planReport, billingFlags);
+            const accountId = extractAccountId(serverData);
+            const signalRows = planReport.signals.length
+                ? planReport.signals.map((signal) => `<li>${escapeHtml(signal.source)}: <b>${escapeHtml(signal.plan.toUpperCase())}</b> (server)</li>`).join("")
+                : "<li>Endpoint ответил, но server-поля плана не найдены</li>";
+            const delinquentHtml = billingFlags.isDelinquent
+                ? `<p><strong>Delinquent:</strong> да${billingFlags.gracePeriodId ? `, gracePeriodId: ${escapeHtml(billingFlags.gracePeriodId)}` : ""}</p>`
+                : `<p><strong>Delinquent:</strong> нет</p>`;
+
+            return {
+                className: verdict.className,
+                html: `
+                <h2>Результат endpoint: ${escapeHtml(planReport.plan.toUpperCase())}</h2>
+                <p><strong>Источник:</strong> ${escapeHtml(CHECK_ENDPOINT)}</p>
+                <p><strong>Поле-источник плана:</strong> ${escapeHtml(planReport.source)}</p>
+                <p><strong>Account ID:</strong> ${escapeHtml(accountId)}</p>
+                <p><strong>Тип подписки:</strong> <b>${escapeHtml(planReport.plan.toUpperCase())}</b></p>
+                ${delinquentHtml}
+                ${verdict.html}
+                <details open><summary>Сигналы подписки</summary><ul>${signalRows}</ul></details>
+                <details><summary>Полный ответ endpoint</summary><pre>${escapeHtml(JSON.stringify(serverData, null, 2))}</pre></details>
+            `
+            };
+        }
+
+        function renderEndpointFailure(statusText, networkLog) {
+            return `
+                <h2>НЕ ПРОВЕРЕНО</h2>
+                <p class="error"><strong>Endpoint не вернул валидный JSON.</strong></p>
+                <p><strong>Endpoint:</strong> ${escapeHtml(CHECK_ENDPOINT)}</p>
+                <p><strong>Причина:</strong> ${escapeHtml(statusText)}</p>
+                <p>Локальные поля из session JSON/JWT намеренно не используются. Для реального ответа endpoint используй snippet, запущенный на странице chatgpt.com.</p>
+                <details open><summary>Технические детали</summary><pre>${escapeHtml(networkLog.join("\n"))}</pre></details>
+            `;
+        }
+
+        function buildSameOriginSnippet(token) {
+            return `(() => {
+  const accessToken = ${JSON.stringify(token)};
+  const endpoint = ${JSON.stringify(SAME_ORIGIN_ENDPOINT)};
+
+  const escapeHtml = (value) => String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+  const get = (object, path) => path.split(".").reduce((value, key) => value == null ? undefined : value[key], object);
+  const firstString = (...values) => {
+    for (const value of values.flat(Infinity)) {
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    return "";
+  };
+  const fromAccounts = (data, path) => Array.isArray(data?.accounts)
+    ? data.accounts.map((account) => get(account, path)).filter(Boolean)
+    : [];
+  const normalizePlan = (plan) => String(plan || "unknown").trim().toLowerCase();
+  const collectSignals = (data) => {
+    const signals = [];
+    const add = (source, value) => {
+      if (typeof value === "string" && value.trim()) {
+        signals.push({ source, plan: normalizePlan(value) });
+      }
+    };
+
+    add("account.planType", data?.account?.planType);
+    add("account.plan_type", data?.account?.plan_type);
+    add("planType", data?.planType);
+    add("plan_type", data?.plan_type);
+    add("plan.type", data?.plan?.type);
+    add("subscription.plan", data?.subscription?.plan);
+    add("subscription.plan_type", data?.subscription?.plan_type);
+    add("billing.subscription.plan", data?.billing?.subscription?.plan);
+    fromAccounts(data, "planType").forEach((value, index) => add(\`accounts[\${index}].planType\`, value));
+    fromAccounts(data, "plan_type").forEach((value, index) => add(\`accounts[\${index}].plan_type\`, value));
+    fromAccounts(data, "account.planType").forEach((value, index) => add(\`accounts[\${index}].account.planType\`, value));
+    return signals;
+  };
+  const firstBoolean = (...values) => {
+    for (const value of values.flat(Infinity)) {
+      if (typeof value === "boolean") return value;
+    }
+    return false;
+  };
+  const billingFlags = (data) => ({
+    isDelinquent: firstBoolean(
+      data?.account?.isDelinquent,
+      fromAccounts(data, "isDelinquent"),
+      fromAccounts(data, "account.isDelinquent")
+    ),
+    gracePeriodId: firstString(
+      data?.account?.gracePeriodId,
+      fromAccounts(data, "gracePeriodId"),
+      fromAccounts(data, "account.gracePeriodId")
+    )
+  });
+  const show = (className, html) => {
+    document.getElementById("endpoint-check-result")?.remove();
+    const box = document.createElement("div");
+    box.id = "endpoint-check-result";
+    box.style.cssText = "position:fixed;z-index:2147483647;top:16px;right:16px;max-width:620px;max-height:80vh;overflow:auto;background:#fff;color:#111;border:1px solid #ddd;border-left:8px solid " + (className === "success" ? "#10a37f" : "#ef4444") + ";border-radius:8px;box-shadow:0 10px 32px rgba(0,0,0,.25);padding:16px;font:14px/1.45 Arial,sans-serif";
+    box.innerHTML = html + '<p><button id="endpoint-check-close" style="padding:8px 12px">Закрыть</button></p>';
+    document.body.prepend(box);
+    document.getElementById("endpoint-check-close").onclick = () => box.remove();
+  };
+
+  (async () => {
+    if (location.hostname !== "chatgpt.com") {
+      alert("Открой https://chatgpt.com и запусти snippet в Console именно там.");
+      return;
+    }
+
+    let data;
+    let response;
+    let text = "";
+    let usedMode = "";
+    const attempts = [
+      { name: "bearer-only", credentials: "omit" },
+      { name: "bearer-with-chatgpt-cookies", credentials: "include" }
+    ];
+    const logs = [];
+
+    for (const attempt of attempts) {
+      try {
+        response = await fetch(endpoint, {
+          method: "GET",
+          credentials: attempt.credentials,
+          headers: {
+            "Accept": "application/json",
+            "Authorization": \`Bearer \${accessToken}\`
+          }
+        });
+        text = await response.text();
+        logs.push(\`\${attempt.name}: HTTP \${response.status}, content-type: \${response.headers.get("content-type") || "none"}\`);
+      } catch (error) {
+        logs.push(\`\${attempt.name}: \${error.message || error}\`);
+        continue;
+      }
+
+      try {
+        data = JSON.parse(text);
+        usedMode = attempt.name;
+        break;
+      } catch (error) {
+        logs.push(\`\${attempt.name}: response is not JSON\`);
+      }
+    }
+
+    if (!data) {
+      show("error", \`
+        <h2>Endpoint did not return JSON</h2>
+        <pre style="white-space:pre-wrap">\${escapeHtml(logs.join("\\n"))}</pre>
+        <pre style="white-space:pre-wrap">\${escapeHtml(text.slice(0, 2000))}</pre>
+      \`);
+      console.log("[accounts/check raw]", { logs, text });
+      return;
+    }
+
+    const signals = collectSignals(data);
+    const primaryPlan = signals[0]?.plan || "unknown";
+    const uniquePlans = [...new Set(signals.map((signal) => signal.plan))];
+    const flags = billingFlags(data);
+    const paid = primaryPlan && !["free", "none", "unknown", "no_subscription"].includes(primaryPlan);
+    const conflict = uniquePlans.length > 1;
+    const rows = signals.length
+      ? signals.map((signal) => \`<li>\${escapeHtml(signal.source)}: <b>\${escapeHtml(signal.plan.toUpperCase())}</b></li>\`).join("")
+      : "<li>Known plan fields not found</li>";
+    const ok = response.ok && paid && !conflict && !flags.isDelinquent;
+
+    show(ok ? "success" : "error", \`
+      <h2>Endpoint result: \${escapeHtml(primaryPlan.toUpperCase())}</h2>
+      <p><strong>HTTP:</strong> \${response.status}</p>
+      <p><strong>Fetch mode:</strong> \${escapeHtml(usedMode)}</p>
+      <p><strong>Delinquent:</strong> \${flags.isDelinquent ? "yes" : "no"}\${flags.gracePeriodId ? ", gracePeriodId: " + escapeHtml(flags.gracePeriodId) : ""}</p>
+      \${conflict ? '<p style="color:#b45309"><strong>Conflict:</strong> endpoint fields show different plans.</p>' : ""}
+      <details open><summary>Plan signals from endpoint</summary><ul>\${rows}</ul></details>
+      <details><summary>Full endpoint JSON</summary><pre style="white-space:pre-wrap">\${escapeHtml(JSON.stringify(data, null, 2))}</pre></details>
+    \`);
+    console.log("[accounts/check endpoint JSON]", data);
+  })();
+})();`;
+        }
+
+        function parseInputJson() {
+            const input = document.getElementById('jsonInput').value.trim();
+            if (!input) throw new Error("JSON пустой.");
+            return JSON.parse(input);
+        }
+
+        function buildConsoleSnippet() {
+            const panel = document.getElementById('snippetPanel');
+            const output = document.getElementById('consoleSnippet');
+            const resultDiv = document.getElementById('result');
+
+            let data;
+            try { data = parseInputJson(); }
+            catch (e) {
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `<p class="error">Ошибка JSON: ${escapeHtml(e.message)}</p>`;
+                return;
+            }
+
+            const token = data.accessToken || data.access_token;
+            if (!token) {
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `<p class="error">accessToken не найден в JSON.</p>`;
+                return;
+            }
+
+            output.value = buildSameOriginSnippet(token);
+            panel.style.display = 'block';
+            output.focus();
+            output.select();
+        }
+
+        async function copyConsoleSnippet() {
+            const output = document.getElementById('consoleSnippet');
+            output.focus();
+            output.select();
+
+            try {
+                await navigator.clipboard.writeText(output.value);
+            } catch (e) {
+                document.execCommand('copy');
+            }
+        }
+
+        async function checkSession() {
+            const input = document.getElementById('jsonInput').value.trim();
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result';
+            resultDiv.innerHTML = '<p>Проверяем только endpoint...</p>';
+
+            let data;
+            try { data = JSON.parse(input); }
+            catch (e) {
+                resultDiv.innerHTML = `<p class="error">Ошибка парсинга JSON. Проверь, что вставил весь текст целиком.</p>`;
+                return;
+            }
+
+            const token = data.accessToken || data.access_token;
+            if (!token) {
+                resultDiv.innerHTML = `<p class="error">accessToken не найден в JSON.</p>`;
+                return;
+            }
+
+            const headers = {
+                "Authorization": `Bearer ${token}`,
+                "Accept": "application/json"
+            };
+
+            const networkLog = [];
+            let responseData = null;
+
+            try {
+                const res = await fetch(CHECK_ENDPOINT, {
+                    method: "GET",
+                    headers: headers,
+                    credentials: "omit",
+                    mode: "cors"
+                });
+                const contentType = res.headers.get("content-type") || "";
+                networkLog.push(`→ ${CHECK_ENDPOINT} вернул HTTP ${res.status}`);
+                networkLog.push(`→ content-type: ${contentType || "без content-type"}`);
+
+                if (!res.ok) {
+                    resultDiv.innerHTML = renderEndpointFailure(`HTTP ${res.status}`, networkLog);
+                    resultDiv.classList.add("error");
+                    return;
+                }
+
+                if (!contentType.includes("application/json")) {
+                    const body = await res.text();
+                    networkLog.push("");
+                    networkLog.push(body.slice(0, 1000));
+                    resultDiv.innerHTML = renderEndpointFailure("ответ не JSON", networkLog);
+                    resultDiv.classList.add("error");
+                    return;
+                }
+
+                responseData = await res.json();
+            } catch (err) {
+                networkLog.push(`→ ${CHECK_ENDPOINT} — ${err.message || "ошибка сети / CORS / Cloudflare"}`);
+                resultDiv.innerHTML = renderEndpointFailure(err.message || "ошибка сети / CORS / Cloudflare", networkLog);
+                resultDiv.classList.add("error");
+                return;
+            }
+
+            const rendered = renderEndpointResult(responseData);
+            resultDiv.innerHTML = rendered.html;
+            resultDiv.classList.add(rendered.className);
+        }
+    </script>
+</body>
+
+</html>

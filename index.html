@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ChatGPT Endpoint Checker</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h1>ChatGPT Endpoint Checker</h1>
+            <p>Проверка только через <code>/backend-api/accounts/check/v4-2023-04-27</code>.</p>
+          </div>
+          <span class="badge">local</span>
+        </div>
+
+        <label for="sessionInput">Session JSON</label>
+        <textarea id="sessionInput" spellcheck="false" placeholder='{"accessToken":"...","sessionToken":"..."}'></textarea>
+
+        <div class="actions">
+          <button id="checkBtn">Проверить endpoint-ы</button>
+          <button id="clearBtn" class="secondary">Очистить</button>
+        </div>
+      </section>
+
+      <section id="resultPanel" class="panel hidden">
+        <div class="panel-header">
+          <div>
+            <h2>Результат endpoint</h2>
+            <p>Backend пробует несколько web/API endpoint-ов. Локальные поля session JSON не используются для вердикта.</p>
+          </div>
+          <span id="resultStatus" class="badge muted">empty</span>
+        </div>
+        <div id="resultBody"></div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
