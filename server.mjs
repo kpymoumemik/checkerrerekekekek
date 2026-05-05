@@ -310,8 +310,8 @@ function normalizePurchaseSource(value) {
   const lower = raw.toLowerCase();
 
   if (!raw) return "";
-  if (lower.includes("google") || lower.includes("play_store") || lower.includes("play store") || lower === "android") return "Google Play";
-  if (lower.includes("apple") || lower.includes("app_store") || lower.includes("app store") || lower.includes("itunes") || lower === "ios") return "App Store";
+  if (lower.includes("google") || lower.includes("play_store") || lower.includes("play store") || lower.includes("mobile_android") || lower === "android") return "Google Play / Android";
+  if (lower.includes("apple") || lower.includes("app_store") || lower.includes("app store") || lower.includes("itunes") || lower.includes("mobile_ios") || lower === "ios") return "App Store / iOS";
   if (lower.includes("stripe") || lower.includes("card") || lower.includes("credit") || lower.includes("web")) return "Web / card";
   if (lower.includes("paypal")) return "PayPal";
   return raw;
@@ -342,6 +342,10 @@ function findStringByKeyPattern(value, pattern, depth = 0, seen = new Set()) {
 
 function extractPurchaseSource(data) {
   const raw = firstString(
+    data?.last_active_subscription?.purchase_origin_platform,
+    data?.subscription?.purchase_origin_platform,
+    data?.entitlement?.purchase_origin_platform,
+    data?.account?.entitlement?.purchase_origin_platform,
     data?.entitlement?.purchase_source,
     data?.entitlement?.purchaseSource,
     data?.entitlement?.purchase_platform,
@@ -366,6 +370,10 @@ function extractPurchaseSource(data) {
     data?.account?.entitlement?.store_type,
     data?.account?.entitlement?.payment_provider,
     data?.account?.entitlement?.billing_provider,
+    fromAccounts(data, "last_active_subscription.purchase_origin_platform"),
+    fromAccounts(data, "subscription.purchase_origin_platform"),
+    fromAccounts(data, "entitlement.purchase_origin_platform"),
+    fromAccounts(data, "account.entitlement.purchase_origin_platform"),
     fromAccounts(data, "entitlement.purchase_source"),
     fromAccounts(data, "entitlement.purchaseSource"),
     fromAccounts(data, "entitlement.purchase_platform"),
@@ -384,7 +392,7 @@ function extractPurchaseSource(data) {
     fromAccounts(data, "last_active_subscription.purchase_source"),
     fromAccounts(data, "last_active_subscription.purchase_platform"),
     fromAccounts(data, "last_active_subscription.store"),
-    findStringByKeyPattern(data, /^(purchase_source|purchaseSource|purchase_platform|purchasePlatform|purchased_from|store|store_type|payment_provider|billing_provider|provider|processor|gateway)$/i)
+    findStringByKeyPattern(data, /^(purchase_origin_platform|purchaseOriginPlatform|purchase_source|purchaseSource|purchase_platform|purchasePlatform|purchased_from|store|store_type|payment_provider|billing_provider|provider|processor|gateway)$/i)
   );
 
   return {
