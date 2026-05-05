@@ -694,22 +694,31 @@ function mergeEndpointMetadata(best, probes) {
     probesByPreference.map((probe) => probe.email && probe.email !== "unknown" ? probe.email : "")
   );
   const subscriptionProbe = probesByPreference.find((probe) => hasSubscriptionData(probe.subscription));
+  const purchaseSourceProbe = probesByPreference.find((probe) => probe.subscription?.purchaseSource);
+  const subscription = {
+    hasActiveSubscription: false,
+    subscriptionId: "",
+    subscriptionPlan: "",
+    subscriptionStartedAt: "",
+    subscriptionRenewsAt: "",
+    subscriptionExpiresAt: "",
+    billingCurrency: "",
+    purchaseSource: "",
+    purchaseSourceRaw: "",
+    willRenew: false,
+    ...(subscriptionProbe?.subscription || {}),
+  };
+
+  if (!subscription.purchaseSource && purchaseSourceProbe?.subscription?.purchaseSource) {
+    subscription.purchaseSource = purchaseSourceProbe.subscription.purchaseSource;
+    subscription.purchaseSourceRaw = purchaseSourceProbe.subscription.purchaseSourceRaw || "";
+  }
 
   return {
     email: email || "unknown",
-    subscription: subscriptionProbe?.subscription || {
-      hasActiveSubscription: false,
-      subscriptionId: "",
-      subscriptionPlan: "",
-      subscriptionStartedAt: "",
-      subscriptionRenewsAt: "",
-      subscriptionExpiresAt: "",
-      billingCurrency: "",
-      purchaseSource: "",
-      purchaseSourceRaw: "",
-      willRenew: false,
-    },
+    subscription,
     subscriptionSourceEndpointId: subscriptionProbe?.id || "",
+    purchaseSourceEndpointId: purchaseSourceProbe?.id || "",
     emailSourceEndpointId: probesByPreference.find((probe) => probe.email && probe.email !== "unknown")?.id || "",
   };
 }
@@ -742,6 +751,7 @@ function resultFromProbe(best, probes) {
       gracePeriodId: best.gracePeriodId || "",
       subscription: metadata.subscription,
       subscriptionSourceEndpointId: metadata.subscriptionSourceEndpointId,
+      purchaseSourceEndpointId: metadata.purchaseSourceEndpointId,
       emailSourceEndpointId: metadata.emailSourceEndpointId,
       hasConflict: Boolean(best.hasConflict),
       signals: best.planSignals,
@@ -771,6 +781,7 @@ function resultFromProbe(best, probes) {
     gracePeriodId: best.gracePeriodId || "",
     subscription: metadata.subscription,
     subscriptionSourceEndpointId: metadata.subscriptionSourceEndpointId,
+    purchaseSourceEndpointId: metadata.purchaseSourceEndpointId,
     emailSourceEndpointId: metadata.emailSourceEndpointId,
     hasConflict: Boolean(best.hasConflict),
     signals: best.planSignals,
