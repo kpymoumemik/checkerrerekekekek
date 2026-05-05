@@ -39,30 +39,30 @@ function statusType(status) {
 
 function resultMessage(result) {
   if (result.status === "VERIFIED_PAID") {
-    return renderMessage("Платная подписка подтверждена ответом endpoint.", "success");
+    return renderMessage("РџР»Р°С‚РЅР°СЏ РїРѕРґРїРёСЃРєР° РїРѕРґС‚РІРµСЂР¶РґРµРЅР° РѕС‚РІРµС‚РѕРј endpoint.", "success");
   }
 
   if (result.status === "VERIFIED_FREE") {
-    return renderMessage("Endpoint подтвердил бесплатный план.", "warning");
+    return renderMessage("Endpoint РїРѕРґС‚РІРµСЂРґРёР» Р±РµСЃРїР»Р°С‚РЅС‹Р№ РїР»Р°РЅ.", "warning");
   }
 
   if (result.status === "VERIFIED_DELINQUENT") {
-    return renderMessage("Endpoint ответил, но аккаунт помечен как delinquent. Не считаю подписку активной.", "warning");
+    return renderMessage("Endpoint РѕС‚РІРµС‚РёР», РЅРѕ Р°РєРєР°СѓРЅС‚ РїРѕРјРµС‡РµРЅ РєР°Рє delinquent. РќРµ СЃС‡РёС‚Р°СЋ РїРѕРґРїРёСЃРєСѓ Р°РєС‚РёРІРЅРѕР№.", "warning");
   }
 
   if (result.status === "VERIFIED_CONFLICT") {
-    return renderMessage("Endpoint вернул конфликтующие поля плана.", "warning");
+    return renderMessage("Endpoint РІРµСЂРЅСѓР» РєРѕРЅС„Р»РёРєС‚СѓСЋС‰РёРµ РїРѕР»СЏ РїР»Р°РЅР°.", "warning");
   }
 
   if (result.status === "VERIFIED_UNKNOWN_PLAN") {
-    return renderMessage("Endpoint ответил JSON, но известных полей плана в ответе нет.", "warning");
+    return renderMessage("Endpoint РѕС‚РІРµС‚РёР» JSON, РЅРѕ РёР·РІРµСЃС‚РЅС‹С… РїРѕР»РµР№ РїР»Р°РЅР° РІ РѕС‚РІРµС‚Рµ РЅРµС‚.", "warning");
   }
 
-  return renderMessage(result.message || "Ни один endpoint не вернул пригодный JSON с планом.", "error");
+  return renderMessage(result.message || "РќРё РѕРґРёРЅ endpoint РЅРµ РІРµСЂРЅСѓР» РїСЂРёРіРѕРґРЅС‹Р№ JSON СЃ РїР»Р°РЅРѕРј.", "error");
 }
 
 function renderSignals(signals) {
-  if (!Array.isArray(signals) || !signals.length) return "<li>Поля плана не найдены</li>";
+  if (!Array.isArray(signals) || !signals.length) return "<li>РџРѕР»СЏ РїР»Р°РЅР° РЅРµ РЅР°Р№РґРµРЅС‹</li>";
 
   return signals
     .map((signal) => `<li>${escapeHtml(signal.source)}: <strong>${escapeHtml(signal.plan.toUpperCase())}</strong></li>`)
@@ -71,7 +71,7 @@ function renderSignals(signals) {
 
 function renderProbeRows(probes) {
   if (!Array.isArray(probes) || !probes.length) {
-    return "<tr><td colspan=\"7\">Нет попыток</td></tr>";
+    return "<tr><td colspan=\"7\">РќРµС‚ РїРѕРїС‹С‚РѕРє</td></tr>";
   }
 
   return probes.map((probe) => {
@@ -107,6 +107,8 @@ function renderSubscription(subscription = {}) {
     ["Active subscription", active ? "yes" : "no"],
     ["Subscription ID", subscription.subscriptionId || "unknown"],
     ["Subscription plan", subscription.subscriptionPlan || "unknown"],
+    ["Subscription source", subscription.purchaseSource || "unknown"],
+    ["Source raw value", subscription.purchaseSourceRaw || "unknown"],
     ["Started at", subscription.subscriptionStartedAt || "unknown"],
     ["Renews at", subscription.subscriptionRenewsAt || "unknown"],
     ["Expires at", subscription.subscriptionExpiresAt || "unknown"],
@@ -134,7 +136,7 @@ function renderResult(result) {
   const probes = Array.isArray(result.probes) ? result.probes : [];
   const cloudflareCount = probes.filter((probe) => probe.bodyKind === "cloudflare_challenge").length;
   const cloudflareNote = cloudflareCount
-    ? renderMessage(`${cloudflareCount} попыток получили Cloudflare challenge/HTML вместо JSON. Это блокировка на стороне endpoint-а, а не ошибка парсинга.`, "warning")
+    ? renderMessage(`${cloudflareCount} РїРѕРїС‹С‚РѕРє РїРѕР»СѓС‡РёР»Рё Cloudflare challenge/HTML РІРјРµСЃС‚Рѕ JSON. Р­С‚Рѕ Р±Р»РѕРєРёСЂРѕРІРєР° РЅР° СЃС‚РѕСЂРѕРЅРµ endpoint-Р°, Р° РЅРµ РѕС€РёР±РєР° РїР°СЂСЃРёРЅРіР°.`, "warning")
     : "";
 
   showResult(result.status, `
@@ -179,12 +181,12 @@ function renderResult(result) {
 
 async function checkSession() {
   checkBtn.disabled = true;
-  checkBtn.textContent = "Проверяю...";
-  showResult("checking", renderMessage("Backend перебирает endpoint-ы. Обычно это занимает несколько секунд.", "warning"), "muted");
+  checkBtn.textContent = "РџСЂРѕРІРµСЂСЏСЋ...";
+  showResult("checking", renderMessage("Backend РїРµСЂРµР±РёСЂР°РµС‚ endpoint-С‹. РћР±С‹С‡РЅРѕ СЌС‚Рѕ Р·Р°РЅРёРјР°РµС‚ РЅРµСЃРєРѕР»СЊРєРѕ СЃРµРєСѓРЅРґ.", "warning"), "muted");
 
   try {
     const raw = sessionInput.value.trim();
-    if (!raw) throw new Error("Вставь session JSON.");
+    if (!raw) throw new Error("Р’СЃС‚Р°РІСЊ session JSON.");
     const session = JSON.parse(raw);
     const response = await fetch("/api/check", {
       method: "POST",
@@ -198,7 +200,7 @@ async function checkSession() {
     showResult("error", renderMessage(error.message || String(error), "error"), "error");
   } finally {
     checkBtn.disabled = false;
-    checkBtn.textContent = "Проверить endpoint-ы";
+    checkBtn.textContent = "РџСЂРѕРІРµСЂРёС‚СЊ endpoint-С‹";
   }
 }
 
