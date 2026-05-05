@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
@@ -305,7 +305,96 @@ function extractEmail(data) {
   ) || "unknown";
 }
 
+function normalizePurchaseSource(value) {
+  const raw = String(value || "").trim();
+  const lower = raw.toLowerCase();
+
+  if (!raw) return "";
+  if (lower.includes("google") || lower.includes("play_store") || lower.includes("play store") || lower === "android") return "Google Play";
+  if (lower.includes("apple") || lower.includes("app_store") || lower.includes("app store") || lower.includes("itunes") || lower === "ios") return "App Store";
+  if (lower.includes("stripe") || lower.includes("card") || lower.includes("credit") || lower.includes("web")) return "Web / card";
+  if (lower.includes("paypal")) return "PayPal";
+  return raw;
+}
+
+function findStringByKeyPattern(value, pattern, depth = 0, seen = new Set()) {
+  if (!value || typeof value !== "object" || depth > 6 || seen.has(value)) return "";
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStringByKeyPattern(item, pattern, depth + 1, seen);
+      if (found) return found;
+    }
+    return "";
+  }
+
+  for (const [key, item] of Object.entries(value)) {
+    if (pattern.test(key) && typeof item === "string" && item.trim()) return item.trim();
+    if (item && typeof item === "object") {
+      const found = findStringByKeyPattern(item, pattern, depth + 1, seen);
+      if (found) return found;
+    }
+  }
+
+  return "";
+}
+
+function extractPurchaseSource(data) {
+  const raw = firstString(
+    data?.entitlement?.purchase_source,
+    data?.entitlement?.purchaseSource,
+    data?.entitlement?.purchase_platform,
+    data?.entitlement?.store,
+    data?.entitlement?.store_type,
+    data?.entitlement?.payment_provider,
+    data?.entitlement?.billing_provider,
+    data?.subscription?.purchase_source,
+    data?.subscription?.purchaseSource,
+    data?.subscription?.purchase_platform,
+    data?.subscription?.store,
+    data?.subscription?.store_type,
+    data?.subscription?.platform,
+    data?.subscription?.payment_provider,
+    data?.subscription?.billing_provider,
+    data?.subscription?.provider,
+    data?.subscription?.processor,
+    data?.subscription?.gateway,
+    data?.account?.entitlement?.purchase_source,
+    data?.account?.entitlement?.purchase_platform,
+    data?.account?.entitlement?.store,
+    data?.account?.entitlement?.store_type,
+    data?.account?.entitlement?.payment_provider,
+    data?.account?.entitlement?.billing_provider,
+    fromAccounts(data, "entitlement.purchase_source"),
+    fromAccounts(data, "entitlement.purchaseSource"),
+    fromAccounts(data, "entitlement.purchase_platform"),
+    fromAccounts(data, "entitlement.store"),
+    fromAccounts(data, "entitlement.store_type"),
+    fromAccounts(data, "entitlement.payment_provider"),
+    fromAccounts(data, "entitlement.billing_provider"),
+    fromAccounts(data, "subscription.purchase_source"),
+    fromAccounts(data, "subscription.purchaseSource"),
+    fromAccounts(data, "subscription.purchase_platform"),
+    fromAccounts(data, "subscription.store"),
+    fromAccounts(data, "subscription.store_type"),
+    fromAccounts(data, "subscription.platform"),
+    fromAccounts(data, "subscription.payment_provider"),
+    fromAccounts(data, "subscription.billing_provider"),
+    fromAccounts(data, "last_active_subscription.purchase_source"),
+    fromAccounts(data, "last_active_subscription.purchase_platform"),
+    fromAccounts(data, "last_active_subscription.store"),
+    findStringByKeyPattern(data, /^(purchase_source|purchaseSource|purchase_platform|purchasePlatform|purchased_from|store|store_type|payment_provider|billing_provider|provider|processor|gateway)$/i)
+  );
+
+  return {
+    purchaseSource: normalizePurchaseSource(raw),
+    purchaseSourceRaw: raw,
+  };
+}
 function extractSubscriptionInfo(data) {
+  const purchase = extractPurchaseSource(data);
+
   return {
     hasActiveSubscription: firstBoolean(
       data?.entitlement?.has_active_subscription,
@@ -383,6 +472,8 @@ function extractSubscriptionInfo(data) {
       fromAccounts(data, "subscription.billing_currency"),
       fromAccounts(data, "account.entitlement.billing_currency")
     ),
+    purchaseSource: purchase.purchaseSource,
+    purchaseSourceRaw: purchase.purchaseSourceRaw,
     willRenew: firstBoolean(
       data?.entitlement?.will_renew,
       data?.subscription?.will_renew,
@@ -586,7 +677,8 @@ function hasSubscriptionData(subscription) {
     subscription.subscriptionPlan ||
     subscription.subscriptionStartedAt ||
     subscription.subscriptionRenewsAt ||
-    subscription.subscriptionExpiresAt
+    subscription.subscriptionExpiresAt ||
+    subscription.purchaseSource
   ));
 }
 
@@ -613,6 +705,8 @@ function mergeEndpointMetadata(best, probes) {
       subscriptionRenewsAt: "",
       subscriptionExpiresAt: "",
       billingCurrency: "",
+      purchaseSource: "",
+      purchaseSourceRaw: "",
       willRenew: false,
     },
     subscriptionSourceEndpointId: subscriptionProbe?.id || "",
