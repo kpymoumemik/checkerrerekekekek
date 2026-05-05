@@ -154,6 +154,7 @@ function renderResult(result) {
     </div>
     ${result.gracePeriodId ? `<p><strong>Grace period:</strong> ${escapeHtml(result.gracePeriodId)}</p>` : ""}
     ${result.emailSourceEndpointId ? `<p><strong>Email source:</strong> ${escapeHtml(result.emailSourceEndpointId)}</p>` : ""}
+    ${result.purchaseSourceEndpointId ? `<p><strong>Payment source endpoint:</strong> ${escapeHtml(result.purchaseSourceEndpointId)}</p>` : ""}
     ${renderSubscription(result.subscription)}
     <details open><summary>Plan signals from selected endpoint</summary><ul>${renderSignals(result.signals)}</ul></details>
     ${renderRaw(result)}
