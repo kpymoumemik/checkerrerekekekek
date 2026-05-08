@@ -1,4 +1,4 @@
-﻿const $ = (selector) => document.querySelector(selector);
+const $ = (selector) => document.querySelector(selector);
 
 const sessionInput = $("#sessionInput");
 const checkBtn = $("#checkBtn");
@@ -196,8 +196,8 @@ function renderResult(result) {
 
 async function checkSession() {
   checkBtn.disabled = true;
-  checkBtn.textContent = "Check";
-  showResult("checking", renderMessage("Backend РїРµСЂРµР±РёСЂР°РµС‚ endpoint-С‹. РћР±С‹С‡РЅРѕ СЌС‚Рѕ Р·Р°РЅРёРјР°РµС‚ РЅРµСЃРєРѕР»СЊРєРѕ СЃРµРєСѓРЅРґ.", "warning"), "muted");
+  checkBtn.textContent = "Wait...";
+  showResult("checking", renderMessage("Wait...", "warning"), "muted");
 
   try {
     const raw = sessionInput.value.trim();
